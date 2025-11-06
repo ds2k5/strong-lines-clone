@@ -1,0 +1,13 @@
+# Background Images for Strong Lines
+
+Place your background images here (PNG or JPG format).
+
+Recommended: 1920x1080 resolution
+Minimum: 5 images for variety
+
+License-free sources:
+- Unsplash.com (CC0)
+- Pexels.com (Free)
+- Pixabay.com (Free)
+
+The game will randomly select images from this folder for each level.
