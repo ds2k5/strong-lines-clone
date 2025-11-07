@@ -155,3 +155,10 @@ cargo run --release
   - Drawing Grid Gizmos (on top) - Cyan borders & yellow path
 - **Collision**: Real-time grid-based collision with predictive detection
 - **Performance**: Optimized sprite despawning for revealed areas
+
+
+
+
+Sounds from:  https://freetouse.com/
+
+Images from: https://pixabay.com/de/
