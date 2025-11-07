@@ -2,7 +2,9 @@ use bevy::prelude::*;
 use rand::Rng;
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+
+mod audio_manager;
+use audio_manager::AudioManager;
 
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
@@ -38,6 +40,19 @@ struct RevealedCell {
 #[derive(Component)]
 struct BackgroundSprite;
 
+#[derive(Component)]
+struct SpeakerButton;
+
+#[derive(Component)]
+struct SpeakerIcon;
+
+// NonSend resource because audio streams cannot be sent between threads
+struct AudioResource {
+    manager: AudioManager,
+    _stream: rodio::OutputStream,
+    _stream_handle: rodio::OutputStreamHandle,
+}
+
 #[derive(Resource)]
 struct GameGrid {
     claimed: [[bool; GRID_SIZE]; GRID_SIZE],
@@ -64,6 +79,23 @@ struct BackgroundImage {
 }
 
 fn main() {
+    // Initialize audio before starting Bevy app
+    let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
+    
+    // Collect all MP3 files from assets/sounds/
+    let mut sound_files = Vec::new();
+    if let Ok(entries) = fs::read_dir("assets/sounds") {
+        for entry in entries.flatten() {
+            if let Some(path_str) = entry.path().to_str() {
+                if path_str.to_lowercase().ends_with(".mp3") {
+                    sound_files.push(entry.path());
+                }
+            }
+        }
+    }
+    
+    let audio_manager = AudioManager::new(&stream_handle, sound_files);
+    
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -74,6 +106,11 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_non_send_resource(AudioResource {
+            manager: audio_manager,
+            _stream,
+            _stream_handle: stream_handle,
+        })
         .insert_resource(GameGrid {
             claimed: {
                 let mut grid = [[false; GRID_SIZE]; GRID_SIZE];
@@ -97,7 +134,7 @@ fn main() {
             level_complete_timer: None,
             ready_to_advance: false,
         })
-        .add_systems(Startup, (setup_game, load_random_image))
+        .add_systems(Startup, (setup_game, load_random_image, setup_speaker_button))
         .add_systems(Update, (
             player_movement,
             enemy_movement,
@@ -109,7 +146,11 @@ fn main() {
             check_level_completion,
             hide_entities_during_completion,
             advance_level,
+        ))
+        .add_systems(Update, (
             update_ui,
+            handle_speaker_button,
+            update_speaker_button_appearance,
         ))
         .run();
 }
@@ -827,4 +868,86 @@ fn get_random_image_path(exclude_path: Option<&str>) -> String {
     println!("🎲 Randomly selected: {}", selected);
     
     selected.clone()
+}
+
+fn setup_speaker_button(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Load speaker icon image
+    let speaker_image: Handle<Image> = asset_server.load("speaker_icon.png");
+    
+    // Create speaker button in top-right corner
+    commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Px(60.0),
+                height: Val::Px(60.0),
+                position_type: PositionType::Absolute,
+                top: Val::Px(10.0),
+                right: Val::Px(10.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::srgba(0.1, 0.2, 0.1, 0.9)), // Dark green when playing
+            border_color: BorderColor(Color::srgba(0.0, 1.0, 0.0, 0.8)), // Green border
+            ..default()
+        },
+        SpeakerButton,
+    ))
+    .with_children(|parent| {
+        parent.spawn((
+            ImageBundle {
+                style: Style {
+                    width: Val::Px(40.0),
+                    height: Val::Px(40.0),
+                    ..default()
+                },
+                image: UiImage::new(speaker_image),
+                ..default()
+            },
+            SpeakerIcon,
+        ));
+    });
+}
+
+fn handle_speaker_button(
+    interaction_query: Query<
+        &Interaction,
+        (Changed<Interaction>, With<SpeakerButton>),
+    >,
+    mut audio_resource: NonSendMut<AudioResource>,
+) {
+    for interaction in interaction_query.iter() {
+        if *interaction == Interaction::Pressed {
+            audio_resource.manager.toggle_mute();
+        }
+    }
+}
+
+fn update_speaker_button_appearance(
+    mut button_query: Query<(&mut BackgroundColor, &mut BorderColor), With<SpeakerButton>>,
+    mut icon_query: Query<&mut UiImage, With<SpeakerIcon>>,
+    audio_resource: NonSend<AudioResource>,
+) {
+    // Update button appearance based on mute state
+    let is_muted = audio_resource.manager.is_muted();
+    
+    for (mut bg_color, mut border_color) in button_query.iter_mut() {
+        if is_muted {
+            *bg_color = BackgroundColor(Color::srgba(0.3, 0.1, 0.1, 0.9)); // Dark red when muted
+            *border_color = BorderColor(Color::srgba(1.0, 0.0, 0.0, 0.8)); // Red border
+        } else {
+            *bg_color = BackgroundColor(Color::srgba(0.1, 0.2, 0.1, 0.9)); // Dark green when playing
+            *border_color = BorderColor(Color::srgba(0.0, 1.0, 0.0, 0.8)); // Green border
+        }
+    }
+    
+    // Update icon color/tint based on mute state
+    for mut ui_image in icon_query.iter_mut() {
+        if is_muted {
+            ui_image.color = Color::srgba(1.0, 0.3, 0.3, 1.0); // Red tint when muted
+        } else {
+            ui_image.color = Color::srgba(0.3, 1.0, 0.3, 1.0); // Green tint when playing
+        }
+    }
 }
