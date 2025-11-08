@@ -68,6 +68,8 @@ struct GameState {
     reveal_threshold: f32, // Percentage needed before image reveals
     level_complete_timer: Option<f32>, // Timer for showing image before next level
     ready_to_advance: bool, // Flag to trigger level advancement
+    level_timer: f32, // Time remaining for current level (in seconds)
+    time_out: bool, // Flag to indicate if level failed due to timeout
 }
 
 #[derive(Resource)]
@@ -133,6 +135,8 @@ fn main() {
             reveal_threshold: 10.0, // Level 1: 10%
             level_complete_timer: None,
             ready_to_advance: false,
+            level_timer: 120.0, // Level 1: 2 minutes (120 seconds)
+            time_out: false,
         })
         .add_systems(Startup, (setup_game, load_random_image, setup_speaker_button))
         .add_systems(Update, (
@@ -143,9 +147,11 @@ fn main() {
             draw_grid,
             update_overlay_appearance,
             reveal_background,
+            update_level_timer,
             check_level_completion,
             hide_entities_during_completion,
             advance_level,
+            restart_game,
         ))
         .add_systems(Update, (
             update_ui,
@@ -554,9 +560,14 @@ fn update_ui(
     
     for mut text in text_query.iter_mut() {
         if game_state.game_over {
+            let reason = if game_state.time_out {
+                "TIME OUT!"
+            } else {
+                "NO LIVES!"
+            };
             text.sections[0].value = format!(
-                "GAME OVER! Final Score: {}% | Level {} | Press R to Restart", 
-                percentage, game_state.level
+                "GAME OVER - {}! Final Score: {}% | Level {} | Press R to Restart", 
+                reason, percentage, game_state.level
             );
         } else if let Some(timer) = game_state.level_complete_timer {
             // Showing completed full image
@@ -565,15 +576,19 @@ fn update_ui(
                 game_state.level, game_state.level + 1, timer
             );
         } else if !bg_image.threshold_reached {
+            let minutes = (game_state.level_timer / 60.0) as u32;
+            let seconds = (game_state.level_timer % 60.0) as u32;
             text.sections[0].value = format!(
-                "Level {} | Progress: {}% / {}% to WIN | Lives: {} | Speed: {:.0}% | Uncover {}% to see FULL image!",
-                game_state.level, percentage, game_state.reveal_threshold as u32, game_state.lives, speed_multiplier * 100.0, game_state.reveal_threshold as u32
+                "Level {} | Time: {:02}:{:02} | Progress: {}% / {}% to WIN | Lives: {} | Speed: {:.0}% | Uncover {}% to see FULL image!",
+                game_state.level, minutes, seconds, percentage, game_state.reveal_threshold as u32, game_state.lives, speed_multiplier * 100.0, game_state.reveal_threshold as u32
             );
         } else {
             // This shouldn't happen long since level completes at threshold
+            let minutes = (game_state.level_timer / 60.0) as u32;
+            let seconds = (game_state.level_timer % 60.0) as u32;
             text.sections[0].value = format!(
-                "Level {} | {}% uncovered | Lives: {} | Speed: {:.0}%",
-                game_state.level, percentage, game_state.lives, speed_multiplier * 100.0
+                "Level {} | Time: {:02}:{:02} | {}% uncovered | Lives: {} | Speed: {:.0}%",
+                game_state.level, minutes, seconds, percentage, game_state.lives, speed_multiplier * 100.0
             );
         }
     }
@@ -627,6 +642,27 @@ fn update_enemy_visuals(
             // Normal red color
             sprite.color = Color::srgb(1.0, 0.0, 0.0);
         }
+    }
+}
+
+fn update_level_timer(
+    mut game_state: ResMut<GameState>,
+    time: Res<Time>,
+) {
+    // Don't update timer if game is over or showing level completion
+    if game_state.game_over || game_state.level_complete_timer.is_some() {
+        return;
+    }
+    
+    // Decrease timer
+    game_state.level_timer -= time.delta_seconds();
+    
+    // Check for timeout
+    if game_state.level_timer <= 0.0 {
+        game_state.level_timer = 0.0;
+        game_state.game_over = true;
+        game_state.time_out = true;
+        println!("⏰ TIME OUT! Level {} failed - time expired!", game_state.level);
     }
 }
 
@@ -694,6 +730,17 @@ fn advance_level(
     game_state.level += 1;
     game_state.reveal_threshold = 10.0 + (game_state.level - 1) as f32 * 2.0;
     game_state.ready_to_advance = false;
+    
+    // Reset timer for new level: 120 seconds minus 5 seconds per level (minimum 30 seconds)
+    game_state.level_timer = (120.0 - (game_state.level - 1) as f32 * 5.0).max(30.0);
+    game_state.time_out = false;
+    
+    println!("⏱️  Level {} time limit: {:.0} seconds ({:.0} minutes {:.0} seconds)", 
+        game_state.level, 
+        game_state.level_timer,
+        (game_state.level_timer / 60.0).floor(),
+        game_state.level_timer % 60.0
+    );
     
     // Reset background image state
     bg_image.revealed_percentage = 0.0;
@@ -796,6 +843,122 @@ fn hide_entities_during_completion(
             Visibility::Visible
         };
     }
+}
+
+fn restart_game(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut game_state: ResMut<GameState>,
+    mut grid: ResMut<GameGrid>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    overlay_query: Query<Entity, With<RevealedCell>>,
+    bg_sprite_query: Query<Entity, With<BackgroundSprite>>,
+    mut bg_image: ResMut<BackgroundImage>,
+    mut player_query: Query<&mut Transform, With<Player>>,
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+) {
+    // Only restart when game is over and R key is pressed
+    if !game_state.game_over || !keyboard.just_pressed(KeyCode::KeyR) {
+        return;
+    }
+    
+    println!("🔄 Restarting game...");
+    
+    // Reset game state to level 1
+    game_state.level = 1;
+    game_state.lives = 3;
+    game_state.score = 0;
+    game_state.game_over = false;
+    game_state.time_out = false;
+    game_state.reveal_threshold = 10.0;
+    game_state.level_complete_timer = None;
+    game_state.ready_to_advance = false;
+    game_state.level_timer = 120.0; // Reset to 2 minutes for level 1
+    
+    // Reset grid (keep edges claimed)
+    grid.claimed = {
+        let mut new_grid = [[false; GRID_SIZE]; GRID_SIZE];
+        for i in 0..GRID_SIZE {
+            new_grid[0][i] = true;
+            new_grid[GRID_SIZE - 1][i] = true;
+            new_grid[i][0] = true;
+            new_grid[i][GRID_SIZE - 1] = true;
+        }
+        new_grid
+    };
+    grid.drawing_path.clear();
+    
+    // Reset player position to bottom edge
+    if let Ok(mut transform) = player_query.get_single_mut() {
+        transform.translation = Vec3::new(0.0, -WINDOW_HEIGHT / 2.0 + CELL_SIZE, 1.0);
+    }
+    
+    // Reset enemy positions
+    let mut rng = rand::thread_rng();
+    for mut transform in enemy_query.iter_mut() {
+        let x = rng.gen_range(-WINDOW_WIDTH/4.0..WINDOW_WIDTH/4.0);
+        let y = rng.gen_range(-WINDOW_HEIGHT/4.0..WINDOW_HEIGHT/4.0);
+        transform.translation = Vec3::new(x, y, 0.5);
+    }
+    
+    // Despawn all existing overlay sprites
+    for entity in overlay_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    
+    // Despawn existing background sprite
+    for entity in bg_sprite_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    
+    // Load new random image
+    let random_image = get_random_image_path(None);
+    println!("Loading new image for restart: {}", random_image);
+    
+    let handle: Handle<Image> = asset_server.load(&random_image);
+    
+    // Spawn new background sprite
+    commands.spawn((
+        SpriteBundle {
+            texture: handle.clone(),
+            transform: Transform::from_xyz(0.0, 0.0, -1.0),
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(WINDOW_WIDTH, WINDOW_HEIGHT)),
+                ..default()
+            },
+            ..default()
+        },
+        BackgroundSprite,
+    ));
+    
+    // Spawn new overlay sprites
+    for y in 0..GRID_SIZE {
+        for x in 0..GRID_SIZE {
+            let world_x = x as f32 * CELL_SIZE - WINDOW_WIDTH / 2.0 + CELL_SIZE / 2.0;
+            let world_y = y as f32 * CELL_SIZE - WINDOW_HEIGHT / 2.0 + CELL_SIZE / 2.0;
+            
+            commands.spawn((
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: Color::srgb(0.0, 0.0, 0.0),
+                        custom_size: Some(Vec2::new(CELL_SIZE, CELL_SIZE)),
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(world_x, world_y, 0.0),
+                    ..default()
+                },
+                RevealedCell { grid_x: x, grid_y: y },
+            ));
+        }
+    }
+    
+    // Update background image resource
+    bg_image.handle = handle;
+    bg_image.current_image_path = random_image;
+    bg_image.revealed_percentage = 0.0;
+    bg_image.threshold_reached = false;
+    
+    println!("✅ Game restarted!");
 }
 
 fn get_random_image_path(exclude_path: Option<&str>) -> String {
