@@ -80,6 +80,76 @@ struct BackgroundImage {
     current_image_path: String, // Track which image is currently loaded
 }
 
+#[derive(Clone, Debug)]
+struct HighScoreEntry {
+    name: String,
+    score: u32,
+}
+
+#[derive(Resource)]
+struct HighScoreList {
+    entries: Vec<HighScoreEntry>,
+}
+
+impl HighScoreList {
+    fn load() -> Self {
+        let entries = fs::read_to_string("highscores.txt")
+            .ok()
+            .and_then(|content| {
+                let mut scores = Vec::new();
+                for line in content.lines() {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    if parts.len() == 2 {
+                        if let Ok(score) = parts[1].parse::<u32>() {
+                            scores.push(HighScoreEntry {
+                                name: parts[0].to_string(),
+                                score,
+                            });
+                        }
+                    }
+                }
+                Some(scores)
+            })
+            .unwrap_or_else(Vec::new);
+        
+        HighScoreList { entries }
+    }
+    
+    fn save(&self) {
+        let content: String = self.entries
+            .iter()
+            .map(|entry| format!("{}|{}", entry.name, entry.score))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = fs::write("highscores.txt", content);
+    }
+    
+    fn add_score(&mut self, name: String, score: u32) {
+        self.entries.push(HighScoreEntry { name, score });
+        self.entries.sort_by(|a, b| b.score.cmp(&a.score));
+        self.entries.truncate(10); // Keep top 10
+        self.save();
+    }
+    
+    fn is_high_score(&self, score: u32) -> bool {
+        self.entries.len() < 10 || score > self.entries.last().map(|e| e.score).unwrap_or(0)
+    }
+}
+
+#[derive(Resource, PartialEq)]
+enum GamePhase {
+    HighScoreScreen,
+    Playing,
+    NameEntry,
+    ShowingNewScores,
+}
+
+#[derive(Resource)]
+struct NameEntry {
+    current_name: String,
+    blink_timer: f32,
+}
+
 fn main() {
     // Initialize audio before starting Bevy app
     let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
@@ -138,8 +208,16 @@ fn main() {
             level_timer: 120.0, // Level 1: 2 minutes (120 seconds)
             time_out: false,
         })
+        .insert_resource(HighScoreList::load())
+        .insert_resource(GamePhase::HighScoreScreen)
+        .insert_resource(NameEntry {
+            current_name: String::new(),
+            blink_timer: 0.0,
+        })
         .add_systems(Startup, (setup_game, load_random_image, setup_speaker_button))
         .add_systems(Update, (
+            handle_high_score_screen,
+            handle_name_entry,
             player_movement,
             enemy_movement,
             update_enemy_visuals,
@@ -282,9 +360,10 @@ fn player_movement(
     time: Res<Time>,
     mut grid: ResMut<GameGrid>,
     game_state: Res<GameState>,
+    game_phase: Res<GamePhase>,
 ) {
-    if game_state.game_over || game_state.level_complete_timer.is_some() {
-        return; // Freeze during game over or level completion display
+    if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
+        return; // Freeze during game over, level completion display, or other phases
     }
     
     let (mut transform, mut player) = player_query.single_mut();
@@ -379,9 +458,10 @@ fn enemy_movement(
     time: Res<Time>,
     grid: Res<GameGrid>,
     game_state: Res<GameState>,
+    game_phase: Res<GamePhase>,
 ) {
-    // Freeze enemies during level completion display
-    if game_state.level_complete_timer.is_some() {
+    // Freeze enemies during level completion display or other phases
+    if game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
         return;
     }
     
@@ -473,26 +553,44 @@ fn check_collisions(
     enemy_query: Query<&Transform, With<Enemy>>,
     mut game_state: ResMut<GameState>,
     mut grid: ResMut<GameGrid>,
+    high_score_list: Res<HighScoreList>,
+    mut game_phase: ResMut<GamePhase>,
 ) {
     if game_state.game_over {
         return;
     }
     
-    let (player_transform, player) = player_query.single();
+    let (_player_transform, player) = player_query.single();
     
-    // Check if drawing and hit by enemy
-    if player.is_drawing {
+    // Check if an enemy hits the drawing line
+    if player.is_drawing && !grid.drawing_path.is_empty() {
         for enemy_transform in enemy_query.iter() {
-            let distance = player_transform.translation.distance(enemy_transform.translation);
-            if distance < CELL_SIZE * 2.0 {
-                // Hit while drawing!
-                game_state.lives -= 1;
-                grid.drawing_path.clear();
-                
-                if game_state.lives <= 0 {
-                    game_state.game_over = true;
+            // Get enemy's grid position
+            let enemy_grid_x = ((enemy_transform.translation.x + WINDOW_WIDTH / 2.0) / CELL_SIZE) as i32;
+            let enemy_grid_y = ((enemy_transform.translation.y + WINDOW_HEIGHT / 2.0) / CELL_SIZE) as i32;
+            
+            // Check if enemy is on any part of the drawing path
+            for &(path_x, path_y) in &grid.drawing_path {
+                if enemy_grid_x == path_x && enemy_grid_y == path_y {
+                    // Enemy hit the drawing line!
+                    println!("💥 Enemy hit your line!");
+                    game_state.lives -= 1;
+                    grid.drawing_path.clear();
+                    
+                    println!("❤️  Lives remaining: {}", game_state.lives);
+                    
+                    if game_state.lives <= 0 {
+                        game_state.game_over = true;
+                        println!("💀 Game Over! No lives remaining.");
+                        
+                        // Check if this is a high score (and score is not 0)
+                        if game_state.score > 0 && high_score_list.is_high_score(game_state.score) {
+                            println!("🏆 This is a high score! Please enter your name.");
+                            *game_phase = GamePhase::NameEntry;
+                        }
+                    }
+                    return;
                 }
-                return;
             }
         }
     }
@@ -543,6 +641,9 @@ fn update_ui(
     game_state: Res<GameState>,
     grid: Res<GameGrid>,
     bg_image: Res<BackgroundImage>,
+    high_score_list: Res<HighScoreList>,
+    game_phase: Res<GamePhase>,
+    name_entry: Res<NameEntry>,
 ) {
     let mut claimed_count = 0;
     let total_cells = GRID_SIZE * GRID_SIZE;
@@ -556,39 +657,63 @@ fn update_ui(
     }
     
     let percentage = (claimed_count as f32 / total_cells as f32 * 100.0) as u32;
-    let speed_multiplier = 1.0 + (game_state.level - 1) as f32 * 0.1;
+    let top_score = high_score_list.entries.first().map(|e| e.score).unwrap_or(0);
     
     for mut text in text_query.iter_mut() {
-        if game_state.game_over {
+        if *game_phase == GamePhase::HighScoreScreen {
+            let mut display = String::from("=== HIGH SCORES ===\n\n");
+            if high_score_list.entries.is_empty() {
+                display.push_str("No scores yet!\n");
+            } else {
+                for (i, entry) in high_score_list.entries.iter().enumerate() {
+                    display.push_str(&format!("{}. {} - {}\n", i + 1, entry.name, entry.score));
+                }
+            }
+            display.push_str("\nPress SPACE to Start Game");
+            text.sections[0].value = display;
+        } else if *game_phase == GamePhase::NameEntry {
+            let cursor = if (name_entry.blink_timer % 1.0) < 0.5 { "_" } else { " " };
+            text.sections[0].value = format!(
+                "🏆 HIGH SCORE! 🏆\nScore: {}\n\nEnter your name:\n{}{}\n\nPress ENTER when done",
+                game_state.score, name_entry.current_name, cursor
+            );
+        } else if *game_phase == GamePhase::ShowingNewScores {
+            let mut display = String::from("=== UPDATED HIGH SCORES ===\n\n");
+            for (i, entry) in high_score_list.entries.iter().enumerate() {
+                display.push_str(&format!("{}. {} - {}\n", i + 1, entry.name, entry.score));
+            }
+            display.push_str("\nPress R to Play Again");
+            text.sections[0].value = display;
+        } else if game_state.game_over {
             let reason = if game_state.time_out {
                 "TIME OUT!"
             } else {
                 "NO LIVES!"
             };
             text.sections[0].value = format!(
-                "GAME OVER - {}! Final Score: {}% | Level {} | Press R to Restart", 
-                reason, percentage, game_state.level
+                "GAME OVER - {}! Score: {} | Top Score: {} | Level {} | Press R to Restart", 
+                reason, game_state.score, top_score, game_state.level
             );
         } else if let Some(timer) = game_state.level_complete_timer {
             // Showing completed full image
             text.sections[0].value = format!(
-                "🎊🎊🎊 LEVEL {} COMPLETE! 🎊🎊🎊 | 💯 VIEWING FULL IMAGE 💯 | Next: Level {} in {:.1}s",
-                game_state.level, game_state.level + 1, timer
+                "🎊 LEVEL {} COMPLETE! 🎊 | Score: {} | Top: {} | Next Level in {:.1}s",
+                game_state.level, game_state.score, top_score, timer
             );
         } else if !bg_image.threshold_reached {
             let minutes = (game_state.level_timer / 60.0) as u32;
             let seconds = (game_state.level_timer % 60.0) as u32;
             text.sections[0].value = format!(
-                "Level {} | Time: {:02}:{:02} | Progress: {}% / {}% to WIN | Lives: {} | Speed: {:.0}% | Uncover {}% to see FULL image!",
-                game_state.level, minutes, seconds, percentage, game_state.reveal_threshold as u32, game_state.lives, speed_multiplier * 100.0, game_state.reveal_threshold as u32
+                "Level {} | Time: {:02}:{:02} | Progress: {}%/{}% | Lives: {} | Score: {} | Top: {}",
+                game_state.level, minutes, seconds, percentage, game_state.reveal_threshold as u32, game_state.lives, game_state.score, top_score
             );
         } else {
             // This shouldn't happen long since level completes at threshold
             let minutes = (game_state.level_timer / 60.0) as u32;
             let seconds = (game_state.level_timer % 60.0) as u32;
             text.sections[0].value = format!(
-                "Level {} | Time: {:02}:{:02} | {}% uncovered | Lives: {} | Speed: {:.0}%",
-                game_state.level, minutes, seconds, percentage, game_state.lives, speed_multiplier * 100.0
+                "Level {} | Time: {:02}:{:02} | {}% | Lives: {} | Score: {} | Top: {}",
+                game_state.level, minutes, seconds, percentage, game_state.lives, game_state.score, top_score
             );
         }
     }
@@ -648,9 +773,11 @@ fn update_enemy_visuals(
 fn update_level_timer(
     mut game_state: ResMut<GameState>,
     time: Res<Time>,
+    mut game_phase: ResMut<GamePhase>,
+    high_score_list: Res<HighScoreList>,
 ) {
-    // Don't update timer if game is over or showing level completion
-    if game_state.game_over || game_state.level_complete_timer.is_some() {
+    // Don't update timer if game is over, showing level completion, or not playing
+    if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
         return;
     }
     
@@ -663,6 +790,12 @@ fn update_level_timer(
         game_state.game_over = true;
         game_state.time_out = true;
         println!("⏰ TIME OUT! Level {} failed - time expired!", game_state.level);
+        
+        // Check if this is a high score (and score is not 0)
+        if game_state.score > 0 && high_score_list.is_high_score(game_state.score) {
+            println!("🏆 This is a high score! Please enter your name.");
+            *game_phase = GamePhase::NameEntry;
+        }
     }
 }
 
@@ -673,7 +806,17 @@ fn check_level_completion(
 ) {
     // Level is complete when threshold is reached (show whole image)
     if bg_image.threshold_reached && game_state.level_complete_timer.is_none() {
+        // Calculate score for completing this level
+        let base_score = game_state.level * 1000; // Base points per level
+        let time_bonus = (game_state.level_timer * game_state.level as f32 * 10.0) as u32; // Time bonus
+        let level_score = base_score + time_bonus;
+        
+        game_state.score += level_score;
+        
         println!("🎊 Level {} Complete! Showing FULL image for {} seconds...", game_state.level, LEVEL_DISPLAY_TIME);
+        println!("💰 Level Score: {} (Base: {} + Time Bonus: {})", level_score, base_score, time_bonus);
+        println!("📊 Total Score: {}", game_state.score);
+        
         println!("👁️  Player and enemies will be hidden so you can see the image clearly!");
         game_state.level_complete_timer = Some(LEVEL_DISPLAY_TIME);
     }
@@ -681,6 +824,11 @@ fn check_level_completion(
     // Count down timer
     if let Some(timer) = game_state.level_complete_timer.as_mut() {
         *timer -= time.delta_seconds();
+        
+        // Debug: Print remaining time every second
+        if (*timer * 10.0) as i32 % 10 == 0 && *timer > 0.1 {
+            println!("⏱️  Image display time remaining: {:.1}s", timer);
+        }
         
         // Timer finished - set flag to advance to next level
         if *timer <= 0.0 {
@@ -824,9 +972,11 @@ fn hide_entities_during_completion(
     mut player_query: Query<&mut Visibility, (With<Player>, Without<Enemy>)>,
     mut enemy_query: Query<&mut Visibility, With<Enemy>>,
     game_state: Res<GameState>,
+    game_phase: Res<GamePhase>,
 ) {
-    // Hide player and enemies during level completion display
-    let should_hide = game_state.level_complete_timer.is_some();
+    // Hide player and enemies during level completion display or non-playing phases
+    let should_hide = game_state.level_complete_timer.is_some() 
+        || *game_phase != GamePhase::Playing;
     
     for mut visibility in player_query.iter_mut() {
         *visibility = if should_hide {
@@ -856,9 +1006,15 @@ fn restart_game(
     mut bg_image: ResMut<BackgroundImage>,
     mut player_query: Query<&mut Transform, With<Player>>,
     mut enemy_query: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+    mut game_phase: ResMut<GamePhase>,
+    mut name_entry: ResMut<NameEntry>,
 ) {
     // Only restart when game is over and R key is pressed
-    if !game_state.game_over || !keyboard.just_pressed(KeyCode::KeyR) {
+    // OR when showing new scores and R key is pressed
+    let should_restart = (game_state.game_over && keyboard.just_pressed(KeyCode::KeyR))
+        || (*game_phase == GamePhase::ShowingNewScores && keyboard.just_pressed(KeyCode::KeyR));
+    
+    if !should_restart {
         return;
     }
     
@@ -874,6 +1030,13 @@ fn restart_game(
     game_state.level_complete_timer = None;
     game_state.ready_to_advance = false;
     game_state.level_timer = 120.0; // Reset to 2 minutes for level 1
+    
+    // Reset game phase
+    *game_phase = GamePhase::Playing;
+    
+    // Reset name entry
+    name_entry.current_name.clear();
+    name_entry.blink_timer = 0.0;
     
     // Reset grid (keep edges claimed)
     grid.claimed = {
@@ -1112,5 +1275,82 @@ fn update_speaker_button_appearance(
         } else {
             ui_image.color = Color::srgba(0.3, 1.0, 0.3, 1.0); // Green tint when playing
         }
+    }
+}
+
+
+fn handle_high_score_screen(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut game_phase: ResMut<GamePhase>,
+) {
+    if *game_phase != GamePhase::HighScoreScreen {
+        return;
+    }
+    
+    if keyboard.just_pressed(KeyCode::Space) {
+        println!("🎮 Starting game...");
+        *game_phase = GamePhase::Playing;
+    }
+}
+
+fn handle_name_entry(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut name_entry: ResMut<NameEntry>,
+    mut game_phase: ResMut<GamePhase>,
+    mut high_score_list: ResMut<HighScoreList>,
+    game_state: Res<GameState>,
+    time: Res<Time>,
+) {
+    if *game_phase != GamePhase::NameEntry {
+        return;
+    }
+    
+    // Update blink timer
+    name_entry.blink_timer += time.delta_seconds();
+    
+    // Handle alphanumeric keys
+    let keys = [
+        (KeyCode::KeyA, 'A'), (KeyCode::KeyB, 'B'), (KeyCode::KeyC, 'C'),
+        (KeyCode::KeyD, 'D'), (KeyCode::KeyE, 'E'), (KeyCode::KeyF, 'F'),
+        (KeyCode::KeyG, 'G'), (KeyCode::KeyH, 'H'), (KeyCode::KeyI, 'I'),
+        (KeyCode::KeyJ, 'J'), (KeyCode::KeyK, 'K'), (KeyCode::KeyL, 'L'),
+        (KeyCode::KeyM, 'M'), (KeyCode::KeyN, 'N'), (KeyCode::KeyO, 'O'),
+        (KeyCode::KeyP, 'P'), (KeyCode::KeyQ, 'Q'), (KeyCode::KeyR, 'R'),
+        (KeyCode::KeyS, 'S'), (KeyCode::KeyT, 'T'), (KeyCode::KeyU, 'U'),
+        (KeyCode::KeyV, 'V'), (KeyCode::KeyW, 'W'), (KeyCode::KeyX, 'X'),
+        (KeyCode::KeyY, 'Y'), (KeyCode::KeyZ, 'Z'),
+        (KeyCode::Digit0, '0'), (KeyCode::Digit1, '1'), (KeyCode::Digit2, '2'),
+        (KeyCode::Digit3, '3'), (KeyCode::Digit4, '4'), (KeyCode::Digit5, '5'),
+        (KeyCode::Digit6, '6'), (KeyCode::Digit7, '7'), (KeyCode::Digit8, '8'),
+        (KeyCode::Digit9, '9'),
+        (KeyCode::Space, ' '),
+    ];
+    
+    for (key, character) in keys {
+        if keyboard.just_pressed(key) && name_entry.current_name.len() < 15 {
+            name_entry.current_name.push(character);
+        }
+    }
+    
+    // Handle backspace
+    if keyboard.just_pressed(KeyCode::Backspace) {
+        name_entry.current_name.pop();
+    }
+    
+    // Handle enter
+    if keyboard.just_pressed(KeyCode::Enter) {
+        let name = if name_entry.current_name.trim().is_empty() {
+            "Player".to_string()
+        } else {
+            name_entry.current_name.trim().to_string()
+        };
+        
+        println!("✅ Adding {} with score {} to high scores", name, game_state.score);
+        high_score_list.add_score(name, game_state.score);
+        
+        name_entry.current_name.clear();
+        name_entry.blink_timer = 0.0;
+        
+        *game_phase = GamePhase::ShowingNewScores;
     }
 }
