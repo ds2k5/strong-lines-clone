@@ -1,5 +1,8 @@
 # Strong Lines - Qix Clone
 
+![screenshot](/screenshot.png)
+
+
 A Rust/Bevy implementation of the classic Qix-style arcade game where you reveal hidden images by drawing lines while avoiding bouncing enemies.
 
 ## How to Play
