@@ -182,7 +182,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Strong Lines".to_string(),
+                title: "Strong Lines Clone".to_string(),
                 resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
                 resizable: false,
                 ..default()
