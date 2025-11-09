@@ -132,7 +132,13 @@ cp ~/another-pic.jpg assets/images/
 
 ## Building and Running
 
-### Quick start:
+### Quick start
+
+rustc and cargo must be installed
+
+https://rust-lang.org/tools/install/
+
+
 ```bash
 ./run.sh
 ```
