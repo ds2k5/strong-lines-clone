@@ -14,6 +14,7 @@ A Rust/Bevy implementation of the classic Qix-style arcade game where you reveal
 - **Level 3**: Uncover **14%** to see the full image
 - Each level adds +2% to the reveal requirement
 - **Enemy speed increases 10% per level** - gets progressively harder!
+- **More enemies spawn** - +1 enemy every 3 levels after level 6!
 - **10-second display** of complete image before next level starts
 - Avoid enemies while drawing lines
 
@@ -36,9 +37,15 @@ A Rust/Bevy implementation of the classic Qix-style arcade game where you reveal
    - Enemies flash WHITE when bouncing
    - Lose a life if enemy hits you while drawing
 10. **Enemies get faster each level** (+10% speed per level)
+11. **More enemies appear** - Every 3 levels after level 6, one more enemy joins!
+    - Levels 1-6: 3 enemies
+    - Levels 7-9: 4 enemies
+    - Levels 10-12: 5 enemies
+    - Levels 13-15: 6 enemies
+    - And so on...
 
 **The reward**: Uncover just 10-14% and see the WHOLE image!
-**The challenge**: Enemies get faster every level!
+**The challenge**: Enemies get faster every level AND more enemies appear!
 
 ### Strategy
 - **Early game (before threshold)**: Work blind! Claim safely from edges
@@ -51,6 +58,7 @@ A Rust/Bevy implementation of the classic Qix-style arcade game where you reveal
 - Your drawing line acts as a temporary wall - enemies can't cross it
 - Enemies flash white when bouncing - use this to track their behavior
 - **Level strategy**: Rush to threshold to start seeing the image, then optimize your captures
+- **Later levels**: With more enemies (4, 5, 6+), timing becomes crucial - wait for clear paths!
 
 ## Key Features
 
@@ -62,8 +70,9 @@ A Rust/Bevy implementation of the classic Qix-style arcade game where you reveal
    - Auto-advance to next level
 ✅ **Escalating Difficulty**:
    - Enemy speed increases 10% per level
+   - **Enemy count increases** - +1 enemy every 3 levels after level 6
    - Higher reveal requirements each level (+2%)
-   - Level 10 = 28% needed, 190% enemy speed!
+   - Level 10 = 28% needed, 190% enemy speed, 5 enemies!
 ✅ **Smart image selection**:
    - Automatically scans directory for images
    - Random selection each level
@@ -146,6 +155,11 @@ cargo run --release
 
 - **Grid System**: 80x80 cells for smooth gameplay
 - **Random Image Selection**: Picks from available images in assets/images/ at startup
+- **Progressive Enemy Scaling**:
+  - Levels 1-6: 3 enemies (starting difficulty)
+  - Level 7+: Additional enemy spawned every 3 levels
+  - Formula: 3 + floor((level - 7) / 3) + 1 for levels > 6
+  - Enemy speed multiplier: 1.0 + (level - 1) × 0.10
 - **Image Reveal System**:
   - Background image scaled to 800x600 at z=-1.0
   - 6400 black overlay sprites (80x80 grid) at z=0.0 covering the image

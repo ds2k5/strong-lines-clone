@@ -12,8 +12,19 @@ const GRID_SIZE: usize = 80;
 const CELL_SIZE: f32 = WINDOW_WIDTH / GRID_SIZE as f32;
 const PLAYER_SPEED: f32 = 200.0;
 const BASE_ENEMY_SPEED: f32 = 150.0;
-const NUM_ENEMIES: usize = 3;
 const LEVEL_DISPLAY_TIME: f32 = 10.0; // Show completed image for 10 seconds
+
+// Calculate number of enemies based on level
+// Level 1-6: 3 enemies
+// Level 7-9: 4 enemies  
+// Level 10-12: 5 enemies, etc.
+fn calculate_enemy_count(level: u32) -> usize {
+    if level <= 6 {
+        3
+    } else {
+        3 + ((level - 7) / 3 + 1) as usize
+    }
+}
 
 #[derive(Component)]
 struct Player {
@@ -239,7 +250,7 @@ fn main() {
         .run();
 }
 
-fn setup_game(mut commands: Commands) {
+fn setup_game(mut commands: Commands, game_state: Res<GameState>) {
     commands.spawn(Camera2dBundle::default());
     
     // Spawn player at the edge
@@ -256,9 +267,15 @@ fn setup_game(mut commands: Commands) {
         Player { is_drawing: false },
     ));
     
+    // Calculate number of enemies based on level
+    // Level 1-6: 3 enemies
+    // Level 7-9: 4 enemies
+    // Level 10-12: 5 enemies, etc.
+    let num_enemies = calculate_enemy_count(game_state.level);
+    
     // Spawn enemies
     let mut rng = rand::thread_rng();
-    for _ in 0..NUM_ENEMIES {
+    for _ in 0..num_enemies {
         let x = rng.gen_range(-WINDOW_WIDTH/4.0..WINDOW_WIDTH/4.0);
         let y = rng.gen_range(-WINDOW_HEIGHT/4.0..WINDOW_HEIGHT/4.0);
         let vx = rng.gen_range(-1.0..1.0);
@@ -874,8 +891,14 @@ fn advance_level(
     
     println!("🔄 Resetting for Level {}...", game_state.level + 1);
     
+    // Store current level for enemy count comparison
+    let old_level = game_state.level;
+    let old_enemy_count = calculate_enemy_count(old_level);
+    
     // Level up
     game_state.level += 1;
+    let new_enemy_count = calculate_enemy_count(game_state.level);
+    
     game_state.reveal_threshold = 10.0 + (game_state.level - 1) as f32 * 2.0;
     game_state.ready_to_advance = false;
     
@@ -889,6 +912,37 @@ fn advance_level(
         (game_state.level_timer / 60.0).floor(),
         game_state.level_timer % 60.0
     );
+    
+    // Spawn additional enemies if needed for this level
+    if new_enemy_count > old_enemy_count {
+        let additional_enemies = new_enemy_count - old_enemy_count;
+        println!("🔴 Adding {} more enemy/enemies! Total enemies: {}", additional_enemies, new_enemy_count);
+        
+        let mut rng = rand::thread_rng();
+        for _ in 0..additional_enemies {
+            let x = rng.gen_range(-WINDOW_WIDTH/4.0..WINDOW_WIDTH/4.0);
+            let y = rng.gen_range(-WINDOW_HEIGHT/4.0..WINDOW_HEIGHT/4.0);
+            let vx = rng.gen_range(-1.0..1.0);
+            let vy = rng.gen_range(-1.0..1.0);
+            let velocity = Vec2::new(vx, vy).normalize() * BASE_ENEMY_SPEED;
+            
+            commands.spawn((
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: Color::srgb(1.0, 0.0, 0.0),
+                        custom_size: Some(Vec2::new(CELL_SIZE * 1.5, CELL_SIZE * 1.5)),
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(x, y, 0.5),
+                    ..default()
+                },
+                Enemy { 
+                    velocity,
+                    bounce_timer: 0.0,
+                },
+            ));
+        }
+    }
     
     // Reset background image state
     bg_image.revealed_percentage = 0.0;
@@ -1005,7 +1059,7 @@ fn restart_game(
     bg_sprite_query: Query<Entity, With<BackgroundSprite>>,
     mut bg_image: ResMut<BackgroundImage>,
     mut player_query: Query<&mut Transform, With<Player>>,
-    mut enemy_query: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+    enemy_query: Query<Entity, With<Enemy>>,
     mut game_phase: ResMut<GamePhase>,
     mut name_entry: ResMut<NameEntry>,
 ) {
@@ -1056,12 +1110,36 @@ fn restart_game(
         transform.translation = Vec3::new(0.0, -WINDOW_HEIGHT / 2.0 + CELL_SIZE, 1.0);
     }
     
-    // Reset enemy positions
+    // Despawn all existing enemies
+    for entity in enemy_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    
+    // Spawn enemies for level 1 (3 enemies)
+    let num_enemies = calculate_enemy_count(1);
     let mut rng = rand::thread_rng();
-    for mut transform in enemy_query.iter_mut() {
+    for _ in 0..num_enemies {
         let x = rng.gen_range(-WINDOW_WIDTH/4.0..WINDOW_WIDTH/4.0);
         let y = rng.gen_range(-WINDOW_HEIGHT/4.0..WINDOW_HEIGHT/4.0);
-        transform.translation = Vec3::new(x, y, 0.5);
+        let vx = rng.gen_range(-1.0..1.0);
+        let vy = rng.gen_range(-1.0..1.0);
+        let velocity = Vec2::new(vx, vy).normalize() * BASE_ENEMY_SPEED;
+        
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::srgb(1.0, 0.0, 0.0),
+                    custom_size: Some(Vec2::new(CELL_SIZE * 1.5, CELL_SIZE * 1.5)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(x, y, 0.5),
+                ..default()
+            },
+            Enemy { 
+                velocity,
+                bounce_timer: 0.0,
+            },
+        ));
     }
     
     // Despawn all existing overlay sprites
