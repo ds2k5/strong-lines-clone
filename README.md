@@ -143,6 +143,17 @@ rustc and cargo must be installed
 https://rust-lang.org/tools/install/
 
 
+rustup target add x86_64-pc-windows-gnu
+
+
+build:
+
+cargo build --release
+
+cargo build --release --target x86_64-pc-windows-gnu
+
+
+
 ```bash
 ./run.sh
 ```
@@ -187,9 +198,38 @@ cargo run --release
 
 
 Sounds from:  https://freetouse.com/
-              https://pixabay.com/sound-e
+	      https://pixabay.com/sound-effect
 
 Images from: https://pixabay.com/de/
 
 
-sudo apt-get install libasound2-dev libudev-dev pkg-config
+Depenencies Linux Mint 22.2
+
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    pkg-config \
+    libasound2-dev \
+    libudev-dev \
+    libxcb-render0-dev \
+    libxcb-shape0-dev \
+    libxcb-xfixes0-dev \
+    libxkbcommon-dev \
+    libssl-dev \
+    libwayland-dev \
+    libx11-dev \
+    libxcursor-dev \
+    libxi-dev \
+    libxrandr-dev \
+    libgl1-mesa-dev \
+    mesa-vulkan-drivers \
+    libasound2-dev \
+    mingw-w64 \
+    upx
+
+
+
+Reduce the size of binary File(s)
+
+upx --best strong-lines
+upx --best strong-lines.exe

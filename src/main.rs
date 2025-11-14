@@ -38,11 +38,6 @@ struct Enemy {
 }
 
 #[derive(Component)]
-struct DrawingLine {
-    points: Vec<(i32, i32)>,
-}
-
-#[derive(Component)]
 struct RevealedCell {
     grid_x: usize,
     grid_y: usize,
@@ -691,7 +686,7 @@ fn update_ui(
                 }
             }
             display.push_str("\n\n=== CONTROLS ===\n");
-            display.push_str("Arrow Keys (↑↓←→) or WASD: Move Player\n");
+            display.push_str("Arrow Keys (UP/DOWN/LEFT/RIGHT) or WASD: Move Player\n");
             display.push_str("Green Square = You\n");
             display.push_str("Red Dots = Enemies\n");
             display.push_str("\nPress SPACE to Start Game");
