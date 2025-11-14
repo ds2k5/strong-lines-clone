@@ -572,6 +572,7 @@ fn check_collisions(
     mut grid: ResMut<GameGrid>,
     high_score_list: Res<HighScoreList>,
     mut game_phase: ResMut<GamePhase>,
+    audio: NonSend<AudioResource>,
 ) {
     if game_state.game_over {
         return;
@@ -599,6 +600,9 @@ fn check_collisions(
                     if game_state.lives <= 0 {
                         game_state.game_over = true;
                         println!("💀 Game Over! No lives remaining.");
+                        
+                        // Play game over sound effect
+                        audio.manager.play_sound_effect("assets/negative_beeps-6008.mp3");
                         
                         // Check if this is a high score (and score is not 0)
                         if game_state.score > 0 && high_score_list.is_high_score(game_state.score) {
@@ -686,6 +690,10 @@ fn update_ui(
                     display.push_str(&format!("{}. {} - {}\n", i + 1, entry.name, entry.score));
                 }
             }
+            display.push_str("\n\n=== CONTROLS ===\n");
+            display.push_str("Arrow Keys (↑↓←→) or WASD: Move Player\n");
+            display.push_str("Green Square = You\n");
+            display.push_str("Red Dots = Enemies\n");
             display.push_str("\nPress SPACE to Start Game");
             text.sections[0].value = display;
         } else if *game_phase == GamePhase::NameEntry {
@@ -792,6 +800,7 @@ fn update_level_timer(
     time: Res<Time>,
     mut game_phase: ResMut<GamePhase>,
     high_score_list: Res<HighScoreList>,
+    audio: NonSend<AudioResource>,
 ) {
     // Don't update timer if game is over, showing level completion, or not playing
     if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
@@ -807,6 +816,9 @@ fn update_level_timer(
         game_state.game_over = true;
         game_state.time_out = true;
         println!("⏰ TIME OUT! Level {} failed - time expired!", game_state.level);
+        
+        // Play game over sound effect
+        audio.manager.play_sound_effect("assets/negative_beeps-6008.mp3");
         
         // Check if this is a high score (and score is not 0)
         if game_state.score > 0 && high_score_list.is_high_score(game_state.score) {

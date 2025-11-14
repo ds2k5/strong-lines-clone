@@ -19,7 +19,11 @@ A Rust/Bevy implementation of the classic Qix-style arcade game where you reveal
 - Avoid enemies while drawing lines
 
 ### Controls
-- **Arrow Keys** or **WASD**: Move your character
+- **Arrow Keys (↑↓←→)** or **WASD**: Move your character around the screen
+  - W or ↑: Move Up
+  - S or ↓: Move Down
+  - A or ←: Move Left
+  - D or →: Move Right
 - Character is GREEN
 - Enemies are RED bouncing dots
 
@@ -183,5 +187,9 @@ cargo run --release
 
 
 Sounds from:  https://freetouse.com/
+              https://pixabay.com/sound-e
 
 Images from: https://pixabay.com/de/
+
+
+sudo apt-get install libasound2-dev libudev-dev pkg-config

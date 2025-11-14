@@ -1,4 +1,4 @@
-use rodio::{Sink, Decoder, Source};
+use rodio::{Sink, Decoder, Source, OutputStreamHandle};
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::{BufReader, Write, Read};
@@ -10,13 +10,19 @@ pub struct AudioManager {
     sink: Sink,
     muted: bool,
     sound_files: Vec<PathBuf>,
+    stream_handle: OutputStreamHandle,
 }
 
 impl AudioManager {
     pub fn new(stream_handle: &rodio::OutputStreamHandle, sound_files: Vec<PathBuf>) -> Self {
         let sink = Sink::try_new(stream_handle).unwrap();
         let muted = Self::load_muted_state().unwrap_or(false);
-        let mut manager = Self { sink, muted, sound_files };
+        let mut manager = Self { 
+            sink, 
+            muted, 
+            sound_files,
+            stream_handle: stream_handle.clone(),
+        };
         manager.play_random_sound();
         if manager.muted {
             manager.sink.pause();
@@ -56,6 +62,23 @@ impl AudioManager {
 
     pub fn is_muted(&self) -> bool {
         self.muted
+    }
+
+    pub fn play_sound_effect(&self, sound_path: &str) {
+        if self.muted {
+            return; // Don't play sound effects when muted
+        }
+        
+        // Create a new sink for the sound effect (one-shot)
+        if let Ok(effect_sink) = Sink::try_new(&self.stream_handle) {
+            if let Ok(file) = File::open(sound_path) {
+                let file = BufReader::new(file);
+                if let Ok(source) = Decoder::new(file) {
+                    effect_sink.append(source);
+                    effect_sink.detach(); // Let it play independently and cleanup when done
+                }
+            }
+        }
     }
 }
 
