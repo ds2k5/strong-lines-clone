@@ -1,6 +1,8 @@
 # Rust build output
 /target/
 
+osxcross/
+
 /Cargo.lock
 Cargo.lock
 

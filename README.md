@@ -233,3 +233,18 @@ Reduce the size of binary File(s)
 
 upx --best strong-lines
 upx --best strong-lines.exe
+
+
+
+
+MacOS:
+
+rustup target add x86_64-apple-darwin    # For Intel Macs
+rustup target add aarch64-apple-darwin   # For Apple Silicon (M1/M2/M3)
+
+
+# Install dependencies
+
+cargo install cross
+
+cross build --target x86_64-apple-darwin --release

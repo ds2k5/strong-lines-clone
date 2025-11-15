@@ -76,6 +76,7 @@ struct GameState {
     ready_to_advance: bool, // Flag to trigger level advancement
     level_timer: f32, // Time remaining for current level (in seconds)
     time_out: bool, // Flag to indicate if level failed due to timeout
+    paused: bool, // Flag to indicate if game is paused
 }
 
 #[derive(Resource)]
@@ -213,6 +214,7 @@ fn main() {
             ready_to_advance: false,
             level_timer: 120.0, // Level 1: 2 minutes (120 seconds)
             time_out: false,
+            paused: false,
         })
         .insert_resource(HighScoreList::load())
         .insert_resource(GamePhase::HighScoreScreen)
@@ -224,6 +226,7 @@ fn main() {
         .add_systems(Update, (
             handle_high_score_screen,
             handle_name_entry,
+            handle_pause_and_mute,
             player_movement,
             enemy_movement,
             update_enemy_visuals,
@@ -374,8 +377,8 @@ fn player_movement(
     game_state: Res<GameState>,
     game_phase: Res<GamePhase>,
 ) {
-    if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
-        return; // Freeze during game over, level completion display, or other phases
+    if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing || game_state.paused {
+        return; // Freeze during game over, level completion display, pause, or other phases
     }
     
     let (mut transform, mut player) = player_query.single_mut();
@@ -472,8 +475,8 @@ fn enemy_movement(
     game_state: Res<GameState>,
     game_phase: Res<GamePhase>,
 ) {
-    // Freeze enemies during level completion display or other phases
-    if game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
+    // Freeze enemies during level completion display, pause, or other phases
+    if game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing || game_state.paused {
         return;
     }
     
@@ -687,6 +690,8 @@ fn update_ui(
             }
             display.push_str("\n\n=== CONTROLS ===\n");
             display.push_str("Arrow Keys (UP/DOWN/LEFT/RIGHT) or WASD: Move Player\n");
+            display.push_str("P: Pause/Resume Game\n");
+            display.push_str("M: Mute/Unmute Audio\n");
             display.push_str("Green Square = You\n");
             display.push_str("Red Dots = Enemies\n");
             display.push_str("\nPress SPACE to Start Game");
@@ -723,17 +728,19 @@ fn update_ui(
         } else if !bg_image.threshold_reached {
             let minutes = (game_state.level_timer / 60.0) as u32;
             let seconds = (game_state.level_timer % 60.0) as u32;
+            let pause_text = if game_state.paused { " | ⏸️ PAUSED" } else { "" };
             text.sections[0].value = format!(
-                "Level {} | Time: {:02}:{:02} | Progress: {}%/{}% | Lives: {} | Score: {} | Top: {}",
-                game_state.level, minutes, seconds, percentage, game_state.reveal_threshold as u32, game_state.lives, game_state.score, top_score
+                "Level {} | Time: {:02}:{:02} | Progress: {}%/{}% | Lives: {} | Score: {} | Top: {}{}",
+                game_state.level, minutes, seconds, percentage, game_state.reveal_threshold as u32, game_state.lives, game_state.score, top_score, pause_text
             );
         } else {
             // This shouldn't happen long since level completes at threshold
             let minutes = (game_state.level_timer / 60.0) as u32;
             let seconds = (game_state.level_timer % 60.0) as u32;
+            let pause_text = if game_state.paused { " | ⏸️ PAUSED" } else { "" };
             text.sections[0].value = format!(
-                "Level {} | Time: {:02}:{:02} | {}% | Lives: {} | Score: {} | Top: {}",
-                game_state.level, minutes, seconds, percentage, game_state.lives, game_state.score, top_score
+                "Level {} | Time: {:02}:{:02} | {}% | Lives: {} | Score: {} | Top: {}{}",
+                game_state.level, minutes, seconds, percentage, game_state.lives, game_state.score, top_score, pause_text
             );
         }
     }
@@ -797,8 +804,8 @@ fn update_level_timer(
     high_score_list: Res<HighScoreList>,
     audio: NonSend<AudioResource>,
 ) {
-    // Don't update timer if game is over, showing level completion, or not playing
-    if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing {
+    // Don't update timer if game is over, showing level completion, paused, or not playing
+    if game_state.game_over || game_state.level_complete_timer.is_some() || *game_phase != GamePhase::Playing || game_state.paused {
         return;
     }
     
@@ -1091,6 +1098,7 @@ fn restart_game(
     game_state.level_complete_timer = None;
     game_state.ready_to_advance = false;
     game_state.level_timer = 120.0; // Reset to 2 minutes for level 1
+    game_state.paused = false; // Reset pause state
     
     // Reset game phase
     *game_phase = GamePhase::Playing;
@@ -1437,5 +1445,37 @@ fn handle_name_entry(
         name_entry.blink_timer = 0.0;
         
         *game_phase = GamePhase::ShowingNewScores;
+    }
+}
+
+fn handle_pause_and_mute(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut game_state: ResMut<GameState>,
+    game_phase: Res<GamePhase>,
+    mut audio: NonSendMut<AudioResource>,
+) {
+    // Only allow pause and mute during active gameplay
+    if *game_phase != GamePhase::Playing {
+        return;
+    }
+    
+    // Handle pause with P key (only when not in game over or level completion)
+    if keyboard.just_pressed(KeyCode::KeyP) && !game_state.game_over && game_state.level_complete_timer.is_none() {
+        game_state.paused = !game_state.paused;
+        if game_state.paused {
+            println!("⏸️  Game PAUSED");
+        } else {
+            println!("▶️  Game RESUMED");
+        }
+    }
+    
+    // Handle mute with M key (works anytime during gameplay)
+    if keyboard.just_pressed(KeyCode::KeyM) {
+        audio.manager.toggle_mute();
+        if audio.manager.is_muted() {
+            println!("🔇 Audio MUTED");
+        } else {
+            println!("🔊 Audio UNMUTED");
+        }
     }
 }

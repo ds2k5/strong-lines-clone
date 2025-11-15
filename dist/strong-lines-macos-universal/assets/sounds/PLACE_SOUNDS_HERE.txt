@@ -1,0 +1,16 @@
+# Background Music for Strong Lines
+
+Place your background music files here (MP3 format).
+
+Recommended: 2-5 minute loops
+Format: MP3 or OGG Vorbis
+
+License-free music sources:
+- Free Music Archive (freemusicarchive.org)
+- ccMixter (ccmixter.org)
+- Incompetech (incompetech.com) - Kevin MacLeod
+- Purple Planet Music (purple-planet.com)
+
+The game will let you select music tracks or use random selection per level.
+
+Make sure to verify the license allows use in games!

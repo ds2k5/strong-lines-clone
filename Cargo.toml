@@ -7,6 +7,8 @@ edition = "2021"
 bevy = { version = "0.14", features = ["jpeg"] }
 rand = "0.8"
 rodio = "0.19"
+# Instead of directly depending on coreaudio
+#rodio = { version = "0.19", default-features = false, features = ["cpal"] }
 
 [profile.release]
 opt-level = 'z'     # Optimize for size

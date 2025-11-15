@@ -1,0 +1,15 @@
+[target.aarch64-apple-darwin]
+[target.aarch64-apple-darwin.env]
+passthrough = [
+    "BINDGEN_EXTRA_CLANG_ARGS",
+    "OSXCROSS_SDK_VERSION",
+    "SDKROOT",
+]
+
+[target.x86_64-apple-darwin]
+[target.x86_64-apple-darwin.env]
+passthrough = [
+    "BINDGEN_EXTRA_CLANG_ARGS",
+    "OSXCROSS_SDK_VERSION",
+    "SDKROOT",
+]
