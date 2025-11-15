@@ -2,6 +2,7 @@
 /target/
 
 osxcross/
+dist/
 
 /Cargo.lock
 Cargo.lock
