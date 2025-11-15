@@ -239,12 +239,6 @@ upx --best strong-lines.exe
 
 MacOS:
 
-rustup target add x86_64-apple-darwin    # For Intel Macs
-rustup target add aarch64-apple-darwin   # For Apple Silicon (M1/M2/M3)
+https://github.com/tpoechtrager/osxcross
 
-
-# Install dependencies
-
-cargo install cross
-
-cross build --target x86_64-apple-darwin --release
+./build-macos-universal.sh
