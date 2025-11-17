@@ -1,6 +1,7 @@
 # Rust build output
 /target/
-
+.xwin-cache
+/.xwin-cache/
 /osxcross/
 osxcross/
 dist/

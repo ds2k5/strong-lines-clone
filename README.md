@@ -242,3 +242,95 @@ MacOS:
 https://github.com/tpoechtrager/osxcross
 
 ./build-macos-universal.sh
+
+
+---
+
+ msvc
+
+# Install xwin
+cargo install xwin
+
+# Install LLVM/Clang (needed for MSVC cross-compilation)
+sudo apt-get update
+sudo apt-get install llvm clang lld
+
+# Create directory for MSVC files
+mkdir -p ~/.xwin
+
+# Download the MSVC toolchain (this will take a few minutes)
+xwin --accept-license splat --output ~/.xwin
+
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+ar = "llvm-ar"
+
+[env]
+CC_x86_64-pc-windows-msvc = "clang-cl"
+CXX_x86_64-pc-windows-msvc = "clang-cl"
+AR_x86_64-pc-windows-msvc = "llvm-lib"
+
+export XWIN_ARCH=x86_64
+export XWIN_CACHE_DIR=$HOME/.xwin
+
+# Set the paths for the MSVC toolchain
+export CC_x86_64_pc_windows_msvc="clang-cl"
+export CXX_x86_64_pc_windows_msvc="clang-cl"
+export AR_x86_64_pc_windows_msvc="llvm-lib"
+
+# Build
+cargo build --target x86_64-pc-windows-msvc --release
+
+.cargo/config.toml
+
+[target.aarch64-apple-darwin]
+linker = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/aarch64-apple-darwin25.1-clang"
+rustflags = [
+    "-C", "link-arg=-mmacosx-version-min=10.13",
+]
+
+[target.x86_64-apple-darwin]
+linker = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/x86_64-apple-darwin25.1-clang"
+rustflags = [
+    "-C", "link-arg=-mmacosx-version-min=10.13",
+]
+
+[env]
+OSXCROSS_SDK = "/home/developer/rust/strong-lines-clone/osxcross/target/SDK/MacOSX26.1.sdk"
+SDKROOT = "/home/developer/rust/strong-lines-clone/osxcross/target/SDK/MacOSX26.1.sdk"
+OSXCROSS_SDK_VERSION = "26.1"
+OSXCROSS_TARGET = "darwin25.1"
+OSXCROSS_NO_SDK_VERSION_SUFFIX = "1"
+CC_x86_64-pc-windows-msvc = "clang-cl"
+CXX_x86_64-pc-windows-msvc = "clang-cl"
+AR_x86_64-pc-windows-msvc = "llvm-lib"
+
+# Compiler configuration for aarch64
+CC_aarch64_apple_darwin = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/aarch64-apple-darwin25.1-clang"
+CXX_aarch64_apple_darwin = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/aarch64-apple-darwin25.1-clang++"
+AR_aarch64_apple_darwin = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/aarch64-apple-darwin25.1-ar"
+CFLAGS_aarch64_apple_darwin = "-isysroot /home/developer/rust/strong-lines-clone/osxcross/target/SDK/MacOSX26.1.sdk"
+
+# Compiler configuration for x86_64
+CC_x86_64_apple_darwin = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/x86_64-apple-darwin25.1-clang"
+CXX_x86_64_apple_darwin = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/x86_64-apple-darwin25.1-clang++"
+AR_x86_64_apple_darwin = "/home/developer/rust/strong-lines-clone/osxcross/target/bin/x86_64-apple-darwin25.1-ar"
+CFLAGS_x86_64_apple_darwin = "-isysroot /home/developer/rust/strong-lines-clone/osxcross/target/SDK/MacOSX26.1.sdk"
+
+PATH = "/home/developer/rust/strong-lines-clone/osxcross/target/bin:${PATH}"
+BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_darwin = "--target=aarch64-apple-darwin -isysroot /home/developer/rust/strong-lines-clone/osxcross/target/SDK/MacOSX26.1.sdk"
+BINDGEN_EXTRA_CLANG_ARGS_x86_64_apple_darwin = "--target=x86_64-apple-darwin -isysroot /home/developer/rust/strong-lines-clone/osxcross/target/SDK/MacOSX26.1.sdk"
+
+
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+ar = "llvm-ar"
+rustflags = [
+    "-L", "/home/developer/.xwin/crt/lib/x86_64",
+    "-L", "/home/developer/.xwin/sdk/lib/um/x86_64",
+    "-L", "/home/developer/.xwin/sdk/lib/ucrt/x86_64",
+]
+
+cargo build --target x86_64-pc-windows-msvc --release
+
+
